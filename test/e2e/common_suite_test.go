@@ -6,11 +6,14 @@ package e2e
 import (
 	"bytes"
 	"context"
+	"io"
+	"strings"
 	"testing"
 	"time"
 
 	log "github.com/sirupsen/logrus"
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/client-go/kubernetes"
 	"sigs.k8s.io/e2e-framework/klient/wait"
 	"sigs.k8s.io/e2e-framework/klient/wait/conditions"
 	envconf "sigs.k8s.io/e2e-framework/pkg/envconf"
@@ -200,4 +203,74 @@ func doTestCreatePodWithSecret(t *testing.T, assert CloudAssert) {
 			return ctx
 		}).Feature()
 	testEnv.Test(t, nginxPodFeature)
+}
+func doTestCreatePodWithWorkDirectory(t *testing.T, assert CloudAssert) {
+	// TODO: generate me.
+	namespace := "default"
+	name := "work-directory-pod"
+	pod := newPodwithWorkingDir(namespace, name, name, "kata")
+
+	workdirPodFeature := features.New("Work Dir Pod").
+		WithSetup("Create pod", func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
+			client, err := cfg.NewClient()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err = client.Resources().Create(ctx, pod); err != nil {
+				t.Fatal(err)
+			}
+			if err = wait.For(conditions.New(client.Resources()).PodPhaseMatch(pod, v1.PodPhase("Succeeded")), wait.WithTimeout(WAIT_POD_RUNNING_TIMEOUT)); err != nil {
+				t.Fatal(err)
+			}
+
+			return ctx
+		}).
+		Assess("Pod has working directory", func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
+			var podlist v1.PodList
+			var podlogstring string
+			err := cfg.Client().Resources(namespace).List(context.TODO(), &podlist)
+			if err != nil {
+				t.Fatal(err)
+			}
+			clienset, err := kubernetes.NewForConfig(cfg.Client().RESTConfig())
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			for _, i := range podlist.Items {
+				if i.ObjectMeta.Name == name {
+					req := clienset.CoreV1().Pods(namespace).GetLogs(name, &v1.PodLogOptions{})
+					podLogs, err := req.Stream(ctx)
+					if err != nil {
+						t.Fatal(err)
+					}
+					defer podLogs.Close()
+					buf := new(bytes.Buffer)
+					_, err = io.Copy(buf, podLogs)
+					if err != nil {
+						t.Fatal(err)
+					}
+					podlogstring = strings.TrimSpace(buf.String())
+				}
+			}
+			if podlogstring == "/other" {
+				log.Infof("Current Working Directory: %s", podlogstring)
+			} else {
+				t.Errorf("Invalid Working Directory: %s", podlogstring)
+			}
+
+			return ctx
+		}).
+		Teardown(func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
+			client, err := cfg.NewClient()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err = client.Resources().Delete(ctx, pod); err != nil {
+				t.Fatal(err)
+			}
+
+			return ctx
+		}).Feature()
+	testEnv.Test(t, workdirPodFeature)
 }

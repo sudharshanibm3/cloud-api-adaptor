@@ -33,6 +33,12 @@ func TestCreatePodWithSecret(t *testing.T) {
 	}
 	doTestCreatePodWithSecret(t, assert)
 }
+func TestCreatePodWithWorkDirectory(t *testing.T) {
+	assert := IBMCloudAssert{
+		vpc: pv.IBMCloudProps.VPC,
+	}
+	doTestCreatePodWithWorkDirectory(t, assert)
+}
 
 // IBMCloudAssert implements the CloudAssert interface for ibmcloud.
 type IBMCloudAssert struct {
