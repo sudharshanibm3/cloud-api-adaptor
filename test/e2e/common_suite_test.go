@@ -6,11 +6,17 @@ package e2e
 import (
 	"bytes"
 	"context"
+	"fmt"
+	"math/rand"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
 	log "github.com/sirupsen/logrus"
 	v1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
 	"sigs.k8s.io/e2e-framework/klient/wait"
 	"sigs.k8s.io/e2e-framework/klient/wait/conditions"
 	envconf "sigs.k8s.io/e2e-framework/pkg/envconf"
@@ -200,4 +206,82 @@ func doTestCreatePodWithSecret(t *testing.T, assert CloudAssert) {
 			return ctx
 		}).Feature()
 	testEnv.Test(t, nginxPodFeature)
+}
+func doTestCreateLargePod(t *testing.T, assert CloudAssert) {
+	namespace := "default"
+	name := "large-new-" + strconv.Itoa(rand.Intn(200)) + "-pod"
+	pod := newLargePod(namespace, name, "large-container", "kata")
+	LargePodFeature := features.New("Large Peer Pod").
+		WithSetup("Create pod", func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
+			client, err := cfg.NewClient()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err = client.Resources().Create(ctx, pod); err != nil {
+				t.Fatal(err)
+			}
+			if err := wait.For(conditions.New(cfg.Client().Resources()).PodRunning(pod), wait.WithTimeout(WAIT_POD_RUNNING_TIMEOUT)); err != nil {
+				t.Fatal(err)
+			}
+			return ctx
+		}).
+		Assess("Creating larger pod", func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
+			var podlist v1.PodList
+			var newPod v1.Pod
+			var pullingtime string
+			if err := cfg.Client().Resources(namespace).List(ctx, &podlist); err != nil {
+				t.Fatal(err)
+			}
+			clienset, err := kubernetes.NewForConfig(cfg.Client().RESTConfig())
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, i := range podlist.Items {
+				if i.ObjectMeta.Name == name {
+					watcher, err := clienset.CoreV1().Events(namespace).Watch(context.Background(), metav1.ListOptions{})
+					if err != nil {
+						t.Fatal(err)
+					}
+					defer watcher.Stop()
+					fmt.Println("****")
+					for event := range watcher.ResultChan() {
+						if event.Object.(*v1.Event).InvolvedObject.Name == i.ObjectMeta.Name {
+							if event.Object.(*v1.Event).Reason == "Pulled" {
+								msg := event.Object.(*v1.Event).Message
+								pullingtime = strings.Split(strings.Split(msg, "(")[1], " ")[0]
+							}
+							if event.Object.(*v1.Event).Reason == "Started" {
+
+								log.Printf("PeerPod/%s with larger image Started Successfully...", i.ObjectMeta.Name)
+								log.Printf("Time taken to pull the image - %s : %s", i.Spec.Containers[0].Image, pullingtime)
+								break
+
+							}
+							if event.Object.(*v1.Event).Reason == "Killing" {
+								t.Errorf("Failed to pull pod with larger image %s", i.Spec.Containers[0].Image)
+								break
+							}
+
+						}
+					}
+					newPod = i
+				}
+			}
+			if newPod.ObjectMeta.Name != name {
+				t.Errorf("Failed to Create a Pod with name, %s", name)
+			}
+			return ctx
+		}).
+		Teardown(func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
+			client, err := cfg.NewClient()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err = client.Resources().Delete(ctx, pod); err != nil {
+				t.Fatal(err)
+			}
+
+			return ctx
+		}).Feature()
+	testEnv.Test(t, LargePodFeature)
 }
