@@ -19,6 +19,17 @@ func newPod(namespace string, name string, containerName string, runtimeclass st
 		},
 	}
 }
+func newPodWithEnvVar(namespace string, name string, containerName string, runtimeclass string) *corev1.Pod {
+	return &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
+		Spec: corev1.PodSpec{
+			Containers:       []corev1.Container{{Name: containerName, Image: "quay.io/sudharshanibm3/env-var-test"}},
+			DNSPolicy:        "ClusterFirst",
+			RestartPolicy:    "Never",
+			RuntimeClassName: &runtimeclass,
+		},
+	}
+}
 
 func newPodWithConfigMap(namespace string, name string, containerName string, runtimeclass string, configmapname string) *corev1.Pod {
 	return &corev1.Pod{

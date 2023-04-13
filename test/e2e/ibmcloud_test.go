@@ -19,6 +19,12 @@ func TestCreateSimplePod(t *testing.T) {
 	}
 	doTestCreateSimplePod(t, assert)
 }
+func TestCreatePodWithEnvVariables(t *testing.T) {
+	assert := IBMCloudAssert{
+		vpc: pv.IBMCloudProps.VPC,
+	}
+	doTestCreatePodWithEnvVariables(t, assert)
+}
 
 func TestCreatePodWithConfigMap(t *testing.T) {
 	assert := IBMCloudAssert{
