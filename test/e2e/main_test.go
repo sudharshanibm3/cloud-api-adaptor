@@ -131,6 +131,7 @@ func TestMain(m *testing.M) {
 		if !shouldTeardown {
 			return ctx, nil
 		}
+
 		if shouldProvisionCluster {
 			if err = provisioner.DeleteCluster(ctx, cfg); err != nil {
 				return ctx, err

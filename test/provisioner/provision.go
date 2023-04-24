@@ -32,6 +32,8 @@ type CloudProvisioner interface {
 	DeleteVPC(ctx context.Context, cfg *envconf.Config) error
 	GetProperties(ctx context.Context, cfg *envconf.Config) map[string]string
 	UploadPodvm(imagePath string, ctx context.Context, cfg *envconf.Config) error
+	CreateAuthJSON(ctx context.Context, cfg *envconf.Config) error
+	DeleteAuthJSON(ctx context.Context, cfg *envconf.Config) error
 }
 
 type newProvisionerFunc func(properties map[string]string) (CloudProvisioner, error)

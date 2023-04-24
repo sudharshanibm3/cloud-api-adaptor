@@ -8,12 +8,11 @@ package provisioner
 import (
 	"context"
 	"encoding/json"
+	log "github.com/sirupsen/logrus"
 	"io"
 	"net/http"
-	"strings"
-
-	log "github.com/sirupsen/logrus"
 	"sigs.k8s.io/e2e-framework/pkg/envconf"
+	"strings"
 )
 
 func init() {
@@ -168,6 +167,10 @@ func (lio *IBMCloudInstallOverlay) Edit(ctx context.Context, cfg *envconf.Config
 				return err
 			}
 		}
+
+	}
+	if err = lio.overlay.SetKustomizeSecretGeneratorFile("auth-json-secret", "auth.json"); err != nil {
+		return err
 	}
 
 	if err = lio.overlay.YamlReload(); err != nil {
