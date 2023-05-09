@@ -108,6 +108,10 @@ func TestMain(m *testing.M) {
 			if err = provisioner.CreateCluster(ctx, cfg); err != nil {
 				return ctx, err
 			}
+		} else {
+			if err = provisioner.CreateRegistry(ctx, cfg); err != nil {
+				return ctx, err
+			}
 		}
 
 		if podvmImage != "" {
@@ -133,6 +137,7 @@ func TestMain(m *testing.M) {
 			return ctx, nil
 		}
 		if shouldProvisionCluster {
+
 			if err = provisioner.DeleteCluster(ctx, cfg); err != nil {
 				return ctx, err
 			}
@@ -142,6 +147,9 @@ func TestMain(m *testing.M) {
 				return ctx, nil
 			}
 		} else {
+			if err = provisioner.DeleteRegistry(ctx, cfg); err != nil {
+				return ctx, err
+			}
 			log.Info("Delete the Cloud API Adaptor installation")
 			if err = cloudAPIAdaptor.Delete(ctx, cfg); err != nil {
 				return ctx, err

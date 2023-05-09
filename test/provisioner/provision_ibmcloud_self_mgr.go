@@ -38,3 +38,9 @@ func (p *SelfManagedClusterProvisioner) UploadPodvm(imagePath string, ctx contex
 func (p *SelfManagedClusterProvisioner) GetProperties(ctx context.Context, cfg *envconf.Config) map[string]string {
 	return make(map[string]string)
 }
+func (p *SelfManagedClusterProvisioner) CreateRegistry(ctx context.Context, cfg *envconf.Config) error {
+	return nil
+}
+func (p *SelfManagedClusterProvisioner) DeleteRegistry(ctx context.Context, cfg *envconf.Config) error {
+	return nil
+}

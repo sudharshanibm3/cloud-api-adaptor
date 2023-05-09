@@ -7,17 +7,20 @@ package provisioner
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"io"
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"os"
 	"path"
 	"path/filepath"
+	"sigs.k8s.io/e2e-framework/pkg/envconf"
 	"strings"
 	"time"
-
-	"crypto/sha256"
-	"sigs.k8s.io/e2e-framework/pkg/envconf"
 
 	"github.com/confidential-containers/cloud-api-adaptor/test/utils"
 
@@ -598,6 +601,61 @@ func getKubeconfig(kubecfgDir string) (*containerv1.ClusterKeyInfo, error) {
 
 	return &kubeCfgInfo, nil
 }
+func newRegistryDeployment(namespace string, name string) *appsv1.Deployment {
+	replicas := int32(1)
+	return &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+			Labels:    map[string]string{"app": name},
+		},
+		Spec: appsv1.DeploymentSpec{
+			Replicas: &replicas,
+			Selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{"app": name},
+			},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{"app": name},
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{{
+						Name:         name,
+						Image:        "registry:latest",
+						VolumeMounts: []corev1.VolumeMount{{Name: "registry-data", MountPath: "/var/lib/registry"}},
+						Ports: []corev1.ContainerPort{{
+							ContainerPort: 5000,
+						}},
+					}},
+					Volumes: []corev1.Volume{{
+						Name:         "registry-data",
+						VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}},
+					}},
+				},
+			},
+		},
+	}
+}
+func newRegistryService(namespace string, name string) *corev1.Service {
+	return &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+		Spec: corev1.ServiceSpec{
+			Type:     corev1.ServiceTypeClusterIP,
+			Selector: map[string]string{"app": "registry"},
+			Ports: []corev1.ServicePort{
+				{
+					Name:       "http",
+					Protocol:   corev1.ProtocolTCP,
+					Port:       5000,
+					TargetPort: intstr.FromInt(5000),
+				},
+			},
+		},
+	}
+}
 
 // IBMCloudProvisioner implements the CloudProvisioner interface for ibmcloud.
 type IBMCloudProvisioner struct {
@@ -693,7 +751,50 @@ func (p *IBMCloudProvisioner) CreateCluster(ctx context.Context, cfg *envconf.Co
 
 	return nil
 }
+func (p *IBMCloudProvisioner) CreateRegistry(ctx context.Context, cfg *envconf.Config) error {
+	log.Trace("CreateRegistry()")
+	client, err := cfg.NewClient()
+	namespace := envconf.RandomName("default", 7)
+	registrypodname := "registry"
+	registryservicename := "registry-service"
+	registrydeployment := newRegistryDeployment(namespace, registrypodname)
+	registryservice := newRegistryService(namespace, registryservicename)
+	if err != nil {
+		return err
+	}
 
+	if err = client.Resources().Create(ctx, registryservice); err != nil {
+		return err
+	}
+	if err = client.Resources().Create(ctx, registrydeployment); err != nil {
+		return err
+	}
+
+	return nil
+
+}
+func (p *IBMCloudProvisioner) DeleteRegistry(ctx context.Context, cfg *envconf.Config) error {
+	log.Trace("DeleteRegistry()")
+	client, err := cfg.NewClient()
+	namespace := envconf.RandomName("default", 7)
+	registrypodname := "registry"
+	registryservicename := "registry-service"
+	registrydeployment := newRegistryDeployment(namespace, registrypodname)
+	registryservice := newRegistryService(namespace, registryservicename)
+	if err != nil {
+		return err
+	}
+
+	if err = client.Resources().Delete(ctx, registryservice); err != nil {
+		return err
+	}
+	if err = client.Resources().Delete(ctx, registrydeployment); err != nil {
+		return err
+	}
+
+	return nil
+
+}
 func (p *IBMCloudProvisioner) CreateVPC(ctx context.Context, cfg *envconf.Config) error {
 	log.Trace("CreateVPC()")
 	return createVpcImpl()

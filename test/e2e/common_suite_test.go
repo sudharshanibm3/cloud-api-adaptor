@@ -7,11 +7,16 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
+	"math/rand"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
 	log "github.com/sirupsen/logrus"
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/client-go/kubernetes"
 	"sigs.k8s.io/e2e-framework/klient/wait"
 	"sigs.k8s.io/e2e-framework/klient/wait/conditions"
 	envconf "sigs.k8s.io/e2e-framework/pkg/envconf"
@@ -258,4 +263,131 @@ func doTestCreatePeerPodContainerWithExternalIPAccess(t *testing.T, assert Cloud
 	}
 
 	newTestCase(t, assert, "Peer Pod Container Connected to External IP", pod).withTestCommands(testCommands).run()
+}
+func doTestCreatePodWithUser(t *testing.T, assert CloudAssert) {
+	namespace := envconf.RandomName("default", 7)
+	name := "user-pod-" + strconv.Itoa(rand.Intn(1000))
+	clusterIP := "localhost"
+	builderpodname := "builder-pod"
+
+	registryservicename := "registry-service"
+	configmapname := "build-context"
+	configmapData := map[string]string{"Dockerfile": "FROM --platform=\"linux/amd64\" alpine:latest AS user-image\nRUN addgroup -S othergroup && adduser -S otheruser -G othergroup\nUSER otheruser\nENTRYPOINT [ \"/bin/bash\", \"-c\", \"whoami\" ]"}
+	configmap := newConfigMap(namespace, configmapname, configmapData)
+	builderpod := newBuilderPod(namespace, builderpodname, "kaniko", "kata", configmapname, clusterIP)
+	pod := newUserPod(namespace, name, name, "kata", clusterIP)
+	mountPath := "host/etc/containerd/certs.d"
+	folderName := clusterIP + ":5000"
+	fileName := "hosts.toml"
+	fileContent := "server = \"http://" + clusterIP + ":5000\"\n[host.\"http://" + clusterIP + ":5000\"]\n\tskip_verify = true\n"
+	daemonset := newDaemonSet(namespace, "node-debugger", mountPath, folderName, fileName, fileContent)
+	userPodFeature := features.New("User Peer Pod").
+		WithSetup("Create pod", func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
+			var endpointlist v1.EndpointsList
+			client, err := cfg.NewClient()
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if err = client.Resources().Create(ctx, configmap); err != nil {
+				t.Fatal(err)
+			}
+
+			if err := cfg.Client().Resources(namespace).List(context.TODO(), &endpointlist); err != nil {
+				t.Fatal(err)
+			}
+
+			for _, i := range endpointlist.Items {
+				if i.ObjectMeta.Name == registryservicename {
+					for _, subset := range i.Subsets {
+						for _, addr := range subset.Addresses {
+							builderpod = newBuilderPod(namespace, builderpodname, "kaniko", "kata", configmapname, addr.IP)
+							pod = newUserPod(namespace, name, name, "kata", addr.IP)
+							clusterIP = addr.IP
+							folderName = clusterIP + ":5000"
+							fileContent = "server = \"http://" + clusterIP + ":5000\"\n[host.\"http://" + clusterIP + ":5000\"]\n\tskip_verify = true\n"
+							daemonset = newDaemonSet(namespace, "node-debugger", mountPath, folderName, fileName, fileContent)
+							if err = client.Resources().Create(ctx, daemonset); err != nil {
+								t.Fatal(err)
+							}
+						}
+					}
+				}
+			}
+			if clusterIP == "localhost" {
+				t.Fatal("Service not created...")
+			}
+
+			if err = client.Resources().Create(ctx, builderpod); err != nil {
+				t.Fatal(err)
+			}
+			if err = wait.For(conditions.New(client.Resources()).PodPhaseMatch(builderpod, v1.PodPhase("Succeeded")), wait.WithTimeout(WAIT_POD_RUNNING_TIMEOUT)); err != nil {
+				t.Fatal(err)
+			}
+			if err = client.Resources().Create(ctx, pod); err != nil {
+				t.Fatal(err)
+			}
+			if err = wait.For(conditions.New(client.Resources()).PodPhaseMatch(pod, v1.PodSucceeded), wait.WithTimeout(WAIT_POD_RUNNING_TIMEOUT)); err != nil {
+				t.Fatal(err)
+			}
+
+			return ctx
+		}).
+		Assess("Peer Pod Contains User", func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
+			var podlist v1.PodList
+			var podlogstring string
+			err := cfg.Client().Resources(namespace).List(context.TODO(), &podlist)
+			if err != nil {
+				t.Fatal(err)
+			}
+			clienset, err := kubernetes.NewForConfig(cfg.Client().RESTConfig())
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, i := range podlist.Items {
+				if i.ObjectMeta.Name == name {
+					req := clienset.CoreV1().Pods(namespace).GetLogs(name, &v1.PodLogOptions{})
+					podLogs, err := req.Stream(ctx)
+					if err != nil {
+						t.Fatal(err)
+					}
+					defer podLogs.Close()
+					buf := new(bytes.Buffer)
+					_, err = io.Copy(buf, podLogs)
+					if err != nil {
+						t.Fatal(err)
+					}
+					podlogstring = strings.TrimSpace(buf.String())
+				}
+			}
+
+			if podlogstring == "otheruser" {
+				log.Infof("Current User: %s", podlogstring)
+			} else {
+				t.Errorf("Invalid User: %s", podlogstring)
+			}
+
+			return ctx
+		}).
+		Teardown(func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
+			client, err := cfg.NewClient()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err = client.Resources().Delete(ctx, pod); err != nil {
+				t.Fatal(err)
+			}
+			if err = client.Resources().Delete(ctx, builderpod); err != nil {
+				t.Fatal(err)
+			}
+			if err = client.Resources().Delete(ctx, configmap); err != nil {
+				t.Fatal(err)
+			}
+			if err = client.Resources().Delete(ctx, daemonset); err != nil {
+				t.Fatal(err)
+			}
+
+			return ctx
+		}).Feature()
+	testEnv.Test(t, userPodFeature)
 }
