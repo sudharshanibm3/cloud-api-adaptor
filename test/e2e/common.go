@@ -128,7 +128,6 @@ func newUserPod(namespace string, name string, containerName string, runtimeclas
 }
 func newDaemonSet(namespace string, name string, mountpath string, folder string, filename string, filecontent string) *appsv1.DaemonSet {
 	var security bool = true
-	runtimeClass := "kata"
 	return &appsv1.DaemonSet{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
 		Spec: appsv1.DaemonSetSpec{
@@ -146,7 +145,6 @@ func newDaemonSet(namespace string, name string, mountpath string, folder string
 							MountPath: "/host",
 						}},
 					}},
-					RuntimeClassName: &runtimeClass,
 					Volumes: []corev1.Volume{{
 						Name: "host-root",
 						VolumeSource: corev1.VolumeSource{

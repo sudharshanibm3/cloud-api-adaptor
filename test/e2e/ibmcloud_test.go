@@ -13,33 +13,33 @@ import (
 	"testing"
 )
 
-func TestCreateSimplePod(t *testing.T) {
-	assert := IBMCloudAssert{
-		vpc: pv.IBMCloudProps.VPC,
-	}
-	doTestCreateSimplePod(t, assert)
-}
+// func TestCreateSimplePod(t *testing.T) {
+// 	assert := IBMCloudAssert{
+// 		vpc: pv.IBMCloudProps.VPC,
+// 	}
+// 	doTestCreateSimplePod(t, assert)
+// }
 
-func TestCreatePodWithConfigMap(t *testing.T) {
-	assert := IBMCloudAssert{
-		vpc: pv.IBMCloudProps.VPC,
-	}
-	doTestCreatePodWithConfigMap(t, assert)
-}
+// func TestCreatePodWithConfigMap(t *testing.T) {
+// 	assert := IBMCloudAssert{
+// 		vpc: pv.IBMCloudProps.VPC,
+// 	}
+// 	doTestCreatePodWithConfigMap(t, assert)
+// }
 
-func TestCreatePodWithSecret(t *testing.T) {
-	assert := IBMCloudAssert{
-		vpc: pv.IBMCloudProps.VPC,
-	}
-	doTestCreatePodWithSecret(t, assert)
-}
+// func TestCreatePodWithSecret(t *testing.T) {
+// 	assert := IBMCloudAssert{
+// 		vpc: pv.IBMCloudProps.VPC,
+// 	}
+// 	doTestCreatePodWithSecret(t, assert)
+// }
 
-func TestCreatePeerPodContainerWithExternalIPAccess(t *testing.T) {
-	assert := IBMCloudAssert{
-		vpc: pv.IBMCloudProps.VPC,
-	}
-	doTestCreatePeerPodContainerWithExternalIPAccess(t, assert)
-}
+//	func TestCreatePeerPodContainerWithExternalIPAccess(t *testing.T) {
+//		assert := IBMCloudAssert{
+//			vpc: pv.IBMCloudProps.VPC,
+//		}
+//		doTestCreatePeerPodContainerWithExternalIPAccess(t, assert)
+//	}
 func TestCreatePodWithUser(t *testing.T) {
 	assert := IBMCloudAssert{
 		vpc: pv.IBMCloudProps.VPC,

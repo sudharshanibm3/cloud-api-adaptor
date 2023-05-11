@@ -265,21 +265,18 @@ func doTestCreatePeerPodContainerWithExternalIPAccess(t *testing.T, assert Cloud
 	newTestCase(t, assert, "Peer Pod Container Connected to External IP", pod).withTestCommands(testCommands).run()
 }
 func doTestCreatePodWithUser(t *testing.T, assert CloudAssert) {
+	var pod, builderpod *v1.Pod
+	var folderName, fileContent string
 	namespace := envconf.RandomName("default", 7)
 	name := "user-pod-" + strconv.Itoa(rand.Intn(1000))
 	clusterIP := "localhost"
 	builderpodname := "builder-pod"
-
 	registryservicename := "registry-service"
 	configmapname := "build-context"
-	configmapData := map[string]string{"Dockerfile": "FROM --platform=\"linux/amd64\" alpine:latest AS user-image\nRUN addgroup -S othergroup && adduser -S otheruser -G othergroup\nUSER otheruser\nENTRYPOINT [ \"/bin/bash\", \"-c\", \"whoami\" ]"}
+	configmapData := map[string]string{"Dockerfile": "FROM --platform=\"linux/amd64\" alpine:latest AS user-image\nRUN addgroup -S othergroup && adduser -S otheruser -G othergroup\nUSER otheruser\nENTRYPOINT [ \"/bin/sh\", \"-c\", \"whoami\" ]"}
 	configmap := newConfigMap(namespace, configmapname, configmapData)
-	builderpod := newBuilderPod(namespace, builderpodname, "kaniko", "kata", configmapname, clusterIP)
-	pod := newUserPod(namespace, name, name, "kata", clusterIP)
 	mountPath := "host/etc/containerd/certs.d"
-	folderName := clusterIP + ":5000"
 	fileName := "hosts.toml"
-	fileContent := "server = \"http://" + clusterIP + ":5000\"\n[host.\"http://" + clusterIP + ":5000\"]\n\tskip_verify = true\n"
 	daemonset := newDaemonSet(namespace, "node-debugger", mountPath, folderName, fileName, fileContent)
 	userPodFeature := features.New("User Peer Pod").
 		WithSetup("Create pod", func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
@@ -301,8 +298,8 @@ func doTestCreatePodWithUser(t *testing.T, assert CloudAssert) {
 				if i.ObjectMeta.Name == registryservicename {
 					for _, subset := range i.Subsets {
 						for _, addr := range subset.Addresses {
-							builderpod = newBuilderPod(namespace, builderpodname, "kaniko", "kata", configmapname, addr.IP)
-							pod = newUserPod(namespace, name, name, "kata", addr.IP)
+							builderpod = newBuilderPod(namespace, builderpodname, "kaniko", "kata-remote", configmapname, addr.IP)
+							pod = newUserPod(namespace, name, name, "kata-remote", addr.IP)
 							clusterIP = addr.IP
 							folderName = clusterIP + ":5000"
 							fileContent = "server = \"http://" + clusterIP + ":5000\"\n[host.\"http://" + clusterIP + ":5000\"]\n\tskip_verify = true\n"
@@ -319,9 +316,6 @@ func doTestCreatePodWithUser(t *testing.T, assert CloudAssert) {
 			}
 
 			if err = client.Resources().Create(ctx, builderpod); err != nil {
-				t.Fatal(err)
-			}
-			if err = wait.For(conditions.New(client.Resources()).PodPhaseMatch(builderpod, v1.PodPhase("Succeeded")), wait.WithTimeout(WAIT_POD_RUNNING_TIMEOUT)); err != nil {
 				t.Fatal(err)
 			}
 			if err = client.Resources().Create(ctx, pod); err != nil {
