@@ -118,14 +118,15 @@ func newUserPod(namespace string, name string, containerName string, runtimeclas
 				{
 					Name:  containerName,
 					Image: clusterIP + ":5000/user-image:latest",
-					// Image:        "stg.icr.io/test-e2e/test-user-multiarch:latest",
+					// Image:        "alpine:latest",
+					// Command:      []string{"/bin/sh", "-c", "sleep 3600"},
 					VolumeMounts: []corev1.VolumeMount{{Name: "daemonjson", MountPath: "/host/etc/containerd/certs.d/" + clusterIP + ":5000/"}},
 				},
 			},
 			ImagePullSecrets: []corev1.LocalObjectReference{{Name: "all-icr-io"}},
 			Volumes:          []corev1.Volume{{Name: "daemonjson", VolumeSource: corev1.VolumeSource{ConfigMap: &corev1.ConfigMapVolumeSource{LocalObjectReference: corev1.LocalObjectReference{Name: "daemonjson"}}}}},
 			DNSPolicy:        "ClusterFirst",
-			RestartPolicy:    "Never",
+			RestartPolicy:    "Always",
 			RuntimeClassName: &runtimeclass,
 		},
 	}

@@ -48,7 +48,7 @@ WORKDIR /src
 ARG CAA_SRC="https://github.com/confidential-containers/cloud-api-adaptor"
 ARG CAA_SRC_REF="staging"
 
-ARG KATA_SRC="https://github.com/kata-containers/kata-containers"
+ARG KATA_SRC="https://github.com/sudharshanibm3/kata-containers"
 ARG KATA_SRC_BRANCH="CCv0"
 
 RUN echo $CAA_SRC
