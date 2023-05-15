@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	appsv1 "k8s.io/api/apps/v1"
+
 	log "github.com/sirupsen/logrus"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/kubernetes"
@@ -266,6 +268,8 @@ func doTestCreatePeerPodContainerWithExternalIPAccess(t *testing.T, assert Cloud
 }
 func doTestCreatePodWithUser(t *testing.T, assert CloudAssert) {
 	var pod, builderpod *v1.Pod
+	var daemonset *appsv1.DaemonSet
+	var daemonmap *v1.ConfigMap
 	var folderName, fileContent string
 	namespace := envconf.RandomName("default", 7)
 	name := "user-pod-" + strconv.Itoa(rand.Intn(1000))
@@ -277,7 +281,6 @@ func doTestCreatePodWithUser(t *testing.T, assert CloudAssert) {
 	configmap := newConfigMap(namespace, configmapname, configmapData)
 	mountPath := "host/etc/containerd/certs.d"
 	fileName := "hosts.toml"
-	daemonset := newDaemonSet(namespace, "node-debugger", mountPath, folderName, fileName, fileContent)
 	userPodFeature := features.New("User Peer Pod").
 		WithSetup("Create pod", func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
 			var endpointlist v1.EndpointsList
@@ -302,11 +305,18 @@ func doTestCreatePodWithUser(t *testing.T, assert CloudAssert) {
 							pod = newUserPod(namespace, name, name, "kata-remote", addr.IP)
 							clusterIP = addr.IP
 							folderName = clusterIP + ":5000"
-							fileContent = "server = \"http://" + clusterIP + ":5000\"\n[host.\"http://" + clusterIP + ":5000\"]\n\tskip_verify = true\n"
+							// daemoncontent = "{\"insecure-registries\":[\"http://" + folderName + "\"]}"
+							fileContent = "server = \"http://" + folderName + "\"\n[host.\"http://" + folderName + "\"]\n\tskip_verify = true\n"
+							daemonmap = newConfigMap(namespace, "daemonjson", map[string]string{"hosts.toml": fileContent})
+
 							daemonset = newDaemonSet(namespace, "node-debugger", mountPath, folderName, fileName, fileContent)
 							if err = client.Resources().Create(ctx, daemonset); err != nil {
 								t.Fatal(err)
 							}
+							if err = client.Resources().Create(ctx, daemonmap); err != nil {
+								t.Fatal(err)
+							}
+
 						}
 					}
 				}

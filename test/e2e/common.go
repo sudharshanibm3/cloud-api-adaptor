@@ -118,8 +118,12 @@ func newUserPod(namespace string, name string, containerName string, runtimeclas
 				{
 					Name:  containerName,
 					Image: clusterIP + ":5000/user-image:latest",
+					// Image:        "stg.icr.io/test-e2e/test-user-multiarch:latest",
+					VolumeMounts: []corev1.VolumeMount{{Name: "daemonjson", MountPath: "/host/etc/containerd/certs.d/" + clusterIP + ":5000/"}},
 				},
 			},
+			ImagePullSecrets: []corev1.LocalObjectReference{{Name: "all-icr-io"}},
+			Volumes:          []corev1.Volume{{Name: "daemonjson", VolumeSource: corev1.VolumeSource{ConfigMap: &corev1.ConfigMapVolumeSource{LocalObjectReference: corev1.LocalObjectReference{Name: "daemonjson"}}}}},
 			DNSPolicy:        "ClusterFirst",
 			RestartPolicy:    "Never",
 			RuntimeClassName: &runtimeclass,
@@ -136,9 +140,13 @@ func newDaemonSet(namespace string, name string, mountpath string, folder string
 				ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace, Labels: map[string]string{"app": name}},
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{{
-						Name:            name,
-						Image:           "busybox",
-						Command:         []string{"/bin/sh", "-c", fmt.Sprintf("rm -rf %s/172* && mkdir -p %s/%s && echo '%s' > %s/%s/%s && sleep 3600", mountpath, mountpath, folder, filecontent, mountpath, folder, filename)},
+						Name:  name,
+						Image: "busybox",
+						Command: []string{
+							"/bin/sh",
+							"-c",
+							fmt.Sprintln("rm -rf " + mountpath + "/172* && mkdir -p " + mountpath + "/" + folder + " && echo '" + filecontent + "' > " + mountpath + "/" + folder + "/" + filename + "&& sleep 3600"),
+						},
 						SecurityContext: &corev1.SecurityContext{Privileged: &security},
 						VolumeMounts: []corev1.VolumeMount{{
 							Name:      "host-root",
