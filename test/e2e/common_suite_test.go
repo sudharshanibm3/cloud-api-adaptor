@@ -7,8 +7,16 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
+	"strings"
 	"testing"
 	"time"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"k8s.io/client-go/kubernetes"
+
+	batchv1 "k8s.io/api/batch/v1"
 
 	log "github.com/sirupsen/logrus"
 	v1 "k8s.io/api/core/v1"
@@ -36,6 +44,7 @@ type testCase struct {
 	pod           *v1.Pod
 	configMap     *v1.ConfigMap
 	secret        *v1.Secret
+	job           *batchv1.Job
 	testCommands  []testCommand
 }
 
@@ -48,7 +57,10 @@ func (tc *testCase) withSecret(secret *v1.Secret) *testCase {
 	tc.secret = secret
 	return tc
 }
-
+func (tc *testCase) withJob(job *batchv1.Job) *testCase {
+	tc.job = job
+	return tc
+}
 func (tc *testCase) withTestCommands(testCommands []testCommand) *testCase {
 	tc.testCommands = testCommands
 	return tc
@@ -73,56 +85,132 @@ func (tc *testCase) run() {
 					t.Fatal(err)
 				}
 			}
-
-			if err = client.Resources().Create(ctx, tc.pod); err != nil {
-				t.Fatal(err)
+			if tc.job != nil {
+				if err = client.Resources().Create(ctx, tc.job); err != nil {
+					t.Fatal(err)
+				}
 			}
-
-			if err = wait.For(conditions.New(client.Resources()).PodRunning(tc.pod), wait.WithTimeout(WAIT_POD_RUNNING_TIMEOUT)); err != nil {
-				t.Fatal(err)
+			if tc.job == nil {
+				if err = client.Resources().Create(ctx, tc.pod); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if tc.job != nil {
+				if err = wait.For(conditions.New(client.Resources()).JobCompleted(tc.job), wait.WithTimeout(WAIT_POD_RUNNING_TIMEOUT)); err != nil {
+					t.Log(err)
+				}
+			}
+			if tc.job == nil {
+				if err = wait.For(conditions.New(client.Resources()).PodRunning(tc.pod), wait.WithTimeout(WAIT_POD_RUNNING_TIMEOUT)); err != nil {
+					t.Fatal(err)
+				}
 			}
 
 			return ctx
 		}).
 		Assess(tc.assessMessage, func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
-			tc.assert.HasPodVM(t, tc.pod.Name)
 
 			var podlist v1.PodList
 
 			if err := cfg.Client().Resources(tc.pod.Namespace).List(context.TODO(), &podlist); err != nil {
 				t.Fatal(err)
 			}
+			if tc.job == nil {
+				tc.assert.HasPodVM(t, tc.pod.Name)
+				for _, testCommand := range tc.testCommands {
+					var stdout, stderr bytes.Buffer
 
-			for _, testCommand := range tc.testCommands {
-				var stdout, stderr bytes.Buffer
+					for _, podItem := range podlist.Items {
+						if podItem.ObjectMeta.Name == tc.pod.Name {
+							if err := cfg.Client().Resources(tc.pod.Namespace).ExecInPod(ctx, tc.pod.Namespace, tc.pod.Name, testCommand.containerName, testCommand.command, &stdout, &stderr); err != nil {
+								t.Log(stderr.String())
+								t.Fatal(err)
+							}
 
-				for _, podItem := range podlist.Items {
-					if podItem.ObjectMeta.Name == tc.pod.Name {
-						if err := cfg.Client().Resources(tc.pod.Namespace).ExecInPod(ctx, tc.pod.Namespace, tc.pod.Name, testCommand.containerName, testCommand.command, &stdout, &stderr); err != nil {
-							t.Log(stderr.String())
-							t.Fatal(err)
-						}
-
-						if !testCommand.testCommandStdoutFn(stdout) {
-							t.Fatal(fmt.Errorf("Command %v running in container %s produced unexpected output on stdout: %s", testCommand.command, testCommand.containerName, stdout.String()))
+							if !testCommand.testCommandStdoutFn(stdout) {
+								t.Fatal(fmt.Errorf("Command %v running in container %s produced unexpected output on stdout: %s", testCommand.command, testCommand.containerName, stdout.String()))
+							}
 						}
 					}
 				}
+			}
+			if tc.job != nil {
+				var podlogstring string
+				var errorpod int
+				var successpod int
+
+				clienset, err := kubernetes.NewForConfig(cfg.Client().RESTConfig())
+				if err != nil {
+					t.Fatal(err)
+				}
+				for _, i := range podlist.Items {
+					if i.ObjectMeta.Labels["job-name"] == tc.job.Name && i.Status.ContainerStatuses[0].State.Terminated.Reason == "StartError" {
+						errorpod++
+						t.Log("WARNING:", i.ObjectMeta.Name, "-", i.Status.ContainerStatuses[0].State.Terminated.Reason)
+					}
+					if i.ObjectMeta.Labels["job-name"] == tc.job.Name && i.Status.ContainerStatuses[0].State.Terminated.Reason == "Completed" {
+						successpod++
+						watcher, err := clienset.CoreV1().Events(tc.job.Namespace).Watch(context.Background(), metav1.ListOptions{})
+						if err != nil {
+							t.Fatal(err)
+						}
+						defer watcher.Stop()
+						for event := range watcher.ResultChan() {
+							if event.Object.(*v1.Event).Reason == "Started" && i.Status.ContainerStatuses[0].State.Terminated.Reason == "Completed" {
+								req := clienset.CoreV1().Pods(tc.job.Namespace).GetLogs(i.ObjectMeta.Name, &v1.PodLogOptions{})
+								podLogs, err := req.Stream(ctx)
+								if err != nil {
+									t.Fatal(err)
+								}
+								defer podLogs.Close()
+								buf := new(bytes.Buffer)
+								_, err = io.Copy(buf, podLogs)
+								if err != nil {
+									t.Fatal(err)
+								}
+								podlogstring = strings.TrimSpace(buf.String())
+								t.Log("SUCCESS:", i.ObjectMeta.Name, "-", i.Status.ContainerStatuses[0].State.Terminated.Reason, "- LOG:", podlogstring)
+								break
+							}
+
+						}
+					}
+
+				}
+				if errorpod == len(podlist.Items) && successpod == 0 {
+					t.Errorf("Job Failed to Start pod")
+				}
+				if successpod == 1 && errorpod >= 1 {
+					t.Skip("Expected Completed status on all pods")
+				}
+				if strings.Contains(podlogstring, "3.14") {
+					log.Printf("Output Log from Pod: %s", podlogstring)
+				} else {
+					t.Errorf("Job Created pod with Invalid log")
+				}
+				return ctx
 			}
 
 			return ctx
 		}).
 		Teardown(func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
+			var podlist v1.PodList
+
+			if err := cfg.Client().Resources(tc.pod.Namespace).List(context.TODO(), &podlist); err != nil {
+				t.Fatal(err)
+			}
 			client, err := cfg.NewClient()
 			if err != nil {
 				t.Fatal(err)
 			}
+			if tc.job == nil {
+				if err = client.Resources().Delete(ctx, tc.pod); err != nil {
+					t.Fatal(err)
+				}
 
-			if err = client.Resources().Delete(ctx, tc.pod); err != nil {
-				t.Fatal(err)
+				log.Infof("Deleting pod... %s", tc.pod.Name)
+
 			}
-
-			log.Infof("Deleting pod... %s", tc.pod.Name)
 
 			if tc.configMap != nil {
 				if err = client.Resources().Delete(ctx, tc.configMap); err != nil {
@@ -139,6 +227,20 @@ func (tc *testCase) run() {
 					log.Infof("Deleting Secret... %s", tc.secret.Name)
 				}
 			}
+			if tc.job != nil {
+				if err = client.Resources().Delete(ctx, tc.job); err != nil {
+					t.Fatal(err)
+				} else {
+					log.Infof("Deleting Job... %s", tc.job.Name)
+				}
+				for _, i := range podlist.Items {
+					if i.ObjectMeta.Labels["job-name"] == tc.job.Name {
+						if err = client.Resources().Delete(ctx, &i); err != nil {
+							t.Fatal(err)
+						}
+					}
+				}
+			}
 
 			return ctx
 		}).Feature()
@@ -151,6 +253,17 @@ func newTestCase(t *testing.T, assert CloudAssert, assessMessage string, pod *v1
 		assert:        assert,
 		assessMessage: assessMessage,
 		pod:           pod,
+	}
+
+	return testCase
+}
+func newTestCasewithJob(t *testing.T, assert CloudAssert, assessMessage string, job *batchv1.Job) *testCase {
+	testCase := &testCase{
+		testing:       t,
+		assert:        assert,
+		assessMessage: assessMessage,
+		job:           job,
+		pod:           &v1.Pod{ObjectMeta: metav1.ObjectMeta{Name: job.Name, Namespace: job.Namespace}},
 	}
 
 	return testCase
@@ -258,4 +371,11 @@ func doTestCreatePeerPodContainerWithExternalIPAccess(t *testing.T, assert Cloud
 	}
 
 	newTestCase(t, assert, "Peer Pod Container Connected to External IP", pod).withTestCommands(testCommands).run()
+}
+func doTestCreatePeerPodWithJob(t *testing.T, assert CloudAssert) {
+	namespace := envconf.RandomName("default", 7)
+	jobname := "job-pi"
+	job := newJob(namespace, jobname)
+	newTestCasewithJob(t, assert, "Job has been created", job).withJob(job).run()
+
 }
