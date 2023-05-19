@@ -73,12 +73,10 @@ func (tc *testCase) withPod(pod *v1.Pod) *testCase {
 	tc.pod = pod
 	return tc
 }
-
 func (tc *testCase) withTestCommands(testCommands []testCommand) *testCase {
 	tc.testCommands = testCommands
 	return tc
 }
-
 func (tc *testCase) withExpectedPodLogString(expectedPodLogString string) *testCase {
 	tc.expectedPodLogString = expectedPodLogString
 	return tc
@@ -121,9 +119,14 @@ func (tc *testCase) run() {
 				if err = client.Resources().Create(ctx, tc.pod); err != nil {
 					t.Fatal(err)
 				}
-
-				if err = wait.For(conditions.New(client.Resources()).PodPhaseMatch(tc.pod, tc.podState), wait.WithTimeout(WAIT_POD_RUNNING_TIMEOUT)); err != nil {
-					t.Fatal(err)
+				if tc.expectedPodLogString != "" {
+					if err = wait.For(conditions.New(client.Resources()).PodPhaseMatch(tc.pod, v1.PodSucceeded), wait.WithTimeout(WAIT_POD_RUNNING_TIMEOUT)); err != nil {
+						t.Fatal(err)
+					}
+				} else {
+					if err = wait.For(conditions.New(client.Resources()).PodRunning(tc.pod), wait.WithTimeout(WAIT_POD_RUNNING_TIMEOUT)); err != nil {
+						t.Fatal(err)
+					}
 				}
 
 			}
@@ -132,6 +135,42 @@ func (tc *testCase) run() {
 		Assess(tc.assessMessage, func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
 			client := cfg.Client()
 			var podlist v1.PodList
+			if tc.pod != nil {
+				if err := client.Resources(tc.pod.Namespace).List(ctx, &podlist); err != nil {
+					t.Fatal(err)
+				}
+				if tc.expectedPodLogString != "" {
+					isLogStringValid, LogString, err := ComparePodLogString(ctx, t, client, *tc.pod, tc.expectedPodLogString)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if isLogStringValid {
+						t.Logf("Log output of peer pod:%s", LogString)
+					} else {
+						t.Errorf("Invalid Log output from peer pod:%s", LogString)
+					}
+				} else if tc.testCommands != nil {
+					for _, testCommand := range tc.testCommands {
+						var stdout, stderr bytes.Buffer
+
+						for _, podItem := range podlist.Items {
+							if podItem.ObjectMeta.Name == tc.pod.Name {
+								if err := cfg.Client().Resources(tc.pod.Namespace).ExecInPod(ctx, tc.pod.Namespace, tc.pod.Name, testCommand.containerName, testCommand.command, &stdout, &stderr); err != nil {
+									t.Log(stderr.String())
+									t.Fatal(err)
+								}
+
+								if !testCommand.testCommandStdoutFn(stdout) {
+									t.Fatal(fmt.Errorf("Command %v running in container %s produced unexpected output on stdout: %s", testCommand.command, testCommand.containerName, stdout.String()))
+								}
+							}
+						}
+					}
+				} else {
+					tc.assert.HasPodVM(t, tc.pod.Name)
+
+				}
+			}
 
 			if tc.job != nil {
 				if err := client.Resources(tc.job.Namespace).List(ctx, &podlist); err != nil {
@@ -154,39 +193,6 @@ func (tc *testCase) run() {
 						t.Errorf("Job Created pod with Invalid log")
 					}
 				}
-			}
-
-			if tc.pod != nil {
-				if err := client.Resources(tc.pod.Namespace).List(ctx, &podlist); err != nil {
-					t.Fatal(err)
-				}
-				if tc.expectedPodLogString != "" {
-					LogString, err := comparePodLogString(ctx, client, *tc.pod, tc.expectedPodLogString)
-					if err != nil {
-						t.Fatal(err)
-					}
-					t.Logf("Log output of peer pod:%s", LogString)
-				}
-				if tc.podState == v1.PodRunning && tc.testCommands != nil {
-					for _, testCommand := range tc.testCommands {
-						var stdout, stderr bytes.Buffer
-
-						for _, podItem := range podlist.Items {
-							if podItem.ObjectMeta.Name == tc.pod.Name {
-								if err := cfg.Client().Resources(tc.pod.Namespace).ExecInPod(ctx, tc.pod.Namespace, tc.pod.Name, testCommand.containerName, testCommand.command, &stdout, &stderr); err != nil {
-									t.Log(stderr.String())
-									t.Fatal(err)
-								}
-
-								if !testCommand.testCommandStdoutFn(stdout) {
-									t.Fatal(fmt.Errorf("Command %v running in container %s produced unexpected output on stdout: %s", testCommand.command, testCommand.containerName, stdout.String()))
-								}
-							}
-						}
-					}
-				}
-				tc.assert.HasPodVM(t, tc.pod.Name)
-
 			}
 			return ctx
 		}).
@@ -254,6 +260,39 @@ func newTestCase(t *testing.T, testName string, assert CloudAssert, assessMessag
 	}
 
 	return testCase
+}
+func ComparePodLogString(ctx context.Context, t *testing.T, client klient.Client, Pod v1.Pod, ExpectedPodlogString string) (bool, string, error) {
+	podLogString := ""
+	var podlist v1.PodList
+	clientset, err := kubernetes.NewForConfig(client.RESTConfig())
+	if err != nil {
+		return false, "", err
+	}
+	if err := client.Resources(Pod.Namespace).List(ctx, &podlist); err != nil {
+		return false, "", err
+	}
+	for _, pod := range podlist.Items {
+		if pod.ObjectMeta.Name == Pod.Name {
+			func() {
+				req := clientset.CoreV1().Pods(Pod.Namespace).GetLogs(pod.ObjectMeta.Name, &v1.PodLogOptions{})
+				podLogs, err := req.Stream(ctx)
+				if err != nil {
+					return
+				}
+				defer podLogs.Close()
+				buf := new(bytes.Buffer)
+				_, err = io.Copy(buf, podLogs)
+				if err != nil {
+					return
+				}
+				podLogString = strings.TrimSpace(buf.String())
+			}()
+		}
+	}
+	if podLogString != ExpectedPodlogString {
+		return false, podLogString, nil
+	}
+	return true, podLogString, nil
 }
 
 func comparePodLogString(ctx context.Context, client klient.Client, customPod v1.Pod, expectedPodlogString string) (string, error) {
@@ -458,6 +497,13 @@ func doTestCreatePeerPodWithJob(t *testing.T, assert CloudAssert) {
 	expectedPodLogString := "3.14"
 	newTestCase(t, "JobPeerPod", assert, "Job has been created").withJob(job).withExpectedPodLogString(expectedPodLogString).run()
 }
+func doTestCreatePeerPodWithUserImage(t *testing.T, assert CloudAssert) {
+	namespace := envconf.RandomName("default", 7)
+	podName := "user-pod"
+	imageName := "quay.io/confidential-containers/test-images:testuser"
+	pod := newPod(namespace, podName, podName, imageName, withRestartPolicy(v1.RestartPolicyOnFailure))
+	expectedPodLogString := "otheruser"
+	newTestCase(t, "UserPeerPod", assert, "Peer pod with user has been created").withPod(pod).withExpectedPodLogString(expectedPodLogString).run()
 
 func doTestCreatePeerPodAndCheckUserLogs(t *testing.T, assert CloudAssert) {
 	namespace := envconf.RandomName("default", 7)
