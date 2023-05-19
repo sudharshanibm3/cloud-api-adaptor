@@ -521,5 +521,14 @@ func doTestCreateConfidentialPod(t *testing.T, assert CloudAssert, testCommands 
 	for i := 0; i < len(testCommands); i++ {
 		testCommands[i].containerName = pod.Spec.Containers[0].Name
 	}
+
 	newTestCase(t, "ConfidentialPodVM", assert, "Confidential PodVM is created").withPod(pod).withTestCommands(testCommands).run()
+}
+func doTestCreatePeerPodWithWorkDirImage(t *testing.T, assert CloudAssert) {
+	namespace := envconf.RandomName("default", 7)
+	podName := "workdirpod"
+	pod := newPod(namespace, podName, podName, "quay.io/confidential-containers/test-images:testworkdir", withRestartPolicy(v1.RestartPolicyOnFailure))
+	expectedPodLogString := "/other"
+	newTestCase(t, "WorkDirPeerPod", assert, "Peer pod with work directory has been created").withPod(pod).withExpectedPodLogString(expectedPodLogString).run()
+
 }

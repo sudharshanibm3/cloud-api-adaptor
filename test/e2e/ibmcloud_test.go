@@ -99,6 +99,13 @@ func TestCreatePeerPodWithUserImage(t *testing.T) {
 	doTestCreatePeerPodWithUserImage(t, assert)
 }
 
+func TestCreatePeerPodWithWorkDirImage(t *testing.T) {
+	assert := IBMCloudAssert{
+		vpc: pv.IBMCloudProps.VPC,
+	}
+	doTestCreatePeerPodWithWorkDirImage(t, assert)
+}
+
 // IBMCloudAssert implements the CloudAssert interface for ibmcloud.
 type IBMCloudAssert struct {
 	vpc *vpcv1.VpcV1
