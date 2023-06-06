@@ -52,6 +52,7 @@ type testCase struct {
 	testCommands         []testCommand
 	expectedPodLogString string
 	podState             v1.PodPhase
+	podWatcher           bool
 }
 
 func (tc *testCase) withConfigMap(configMap *v1.ConfigMap) *testCase {
@@ -87,6 +88,10 @@ func (tc *testCase) withCustomPodState(customPodState v1.PodPhase) *testCase {
 	return tc
 }
 
+func (tc *testCase) withPodWatcher() *testCase {
+	tc.podWatcher = true
+	return tc
+}
 func (tc *testCase) run() {
 	testCaseFeature := features.New(fmt.Sprintf("%s test", tc.testName)).
 		WithSetup("Create testworkload", func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
@@ -139,7 +144,17 @@ func (tc *testCase) run() {
 				if err := client.Resources(tc.pod.Namespace).List(ctx, &podlist); err != nil {
 					t.Fatal(err)
 				}
-				if tc.expectedPodLogString != "" {
+				if tc.podWatcher {
+					isPodStarted, imagePullTime, err := WatchImagePullTime(ctx, t, client, *tc.pod)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if isPodStarted {
+						t.Logf("Pod with larger image started successfully\nImageName:%s\nTimeTaken:%s", tc.pod.Spec.Containers[0].Image, imagePullTime)
+					} else {
+						t.Errorf("Failed to pull pod with larger image %s", tc.pod.Spec.Containers[0].Image)
+					}
+				} else if tc.expectedPodLogString != "" {
 					isLogStringValid, LogString, err := ComparePodLogString(ctx, t, client, *tc.pod, tc.expectedPodLogString)
 					if err != nil {
 						t.Fatal(err)
@@ -294,47 +309,46 @@ func ComparePodLogString(ctx context.Context, t *testing.T, client klient.Client
 	}
 	return true, podLogString, nil
 }
-
-func comparePodLogString(ctx context.Context, client klient.Client, customPod v1.Pod, expectedPodlogString string) (string, error) {
-	podLogString := ""
+func WatchImagePullTime(ctx context.Context, t *testing.T, client klient.Client, Pod v1.Pod) (bool, string, error) {
 	var podlist v1.PodList
+	pullingtime := ""
 	clientset, err := kubernetes.NewForConfig(client.RESTConfig())
 	if err != nil {
-		return podLogString, err
+		return false, "", err
 	}
-	if err := client.Resources(customPod.Namespace).List(ctx, &podlist); err != nil {
-		return podLogString, err
+	if err := client.Resources(Pod.Namespace).List(ctx, &podlist); err != nil {
+		return false, "", err
 	}
-	for _, pod := range podlist.Items {
-		if pod.ObjectMeta.Name == customPod.Name {
-			func() {
-				req := clientset.CoreV1().Pods(customPod.Namespace).GetLogs(pod.ObjectMeta.Name, &v1.PodLogOptions{})
-				podLogs, err := req.Stream(ctx)
-				if err != nil {
-					return
+	for _, i := range podlist.Items {
+		if i.ObjectMeta.Name == Pod.Name {
+			watcher, err := clientset.CoreV1().Events(Pod.Namespace).Watch(context.Background(), metav1.ListOptions{})
+			if err != nil {
+				return false, "", err
+			}
+			defer watcher.Stop()
+			for event := range watcher.ResultChan() {
+				if event.Object.(*v1.Event).InvolvedObject.Name == i.ObjectMeta.Name {
+					if event.Object.(*v1.Event).Reason == "Pulled" {
+						msg := event.Object.(*v1.Event).Message
+						pullingtime = strings.Split(strings.Split(msg, "(")[1], " ")[0]
+					}
+					if event.Object.(*v1.Event).Reason == "Started" {
+
+						break
+
+					}
+					if event.Object.(*v1.Event).Reason == "Killing" {
+						err = fmt.Errorf("Failed to Pull Image")
+						return false, pullingtime, nil
+					}
+
 				}
-				defer podLogs.Close()
-				buf := new(bytes.Buffer)
-				_, err = io.Copy(buf, podLogs)
-				if err != nil {
-					return
-				}
-				podLogString = strings.TrimSpace(buf.String())
-			}()
+			}
+
 		}
 	}
-
-	if err != nil {
-		return podLogString, err
-	}
-
-	if podLogString != expectedPodlogString {
-		return podLogString, errors.New("Error: Pod Log doesn't match with Expected String")
-	}
-
-	return podLogString, nil
+	return true, pullingtime, nil
 }
-
 func getSuccessfulAndErroredPods(ctx context.Context, t *testing.T, client klient.Client, job batchv1.Job) (int, int, string, error) {
 	podLogString := ""
 	errorPod := 0
@@ -538,5 +552,14 @@ func doTestCreatePeerPodWithEnvVariableImage(t *testing.T, assert CloudAssert) {
 	pod := newPod(namespace, podName, podName, "quay.io/confidential-containers/test-images:testenv", withRestartPolicy(v1.RestartPolicyOnFailure))
 	expectedPodLogString := "ISPRODUCTION=false"
 	newTestCase(t, "EnvPeerPod", assert, "Peer pod with Environment Variables has been created").withPod(pod).withExpectedPodLogString(expectedPodLogString).run()
+
+}
+
+func doTestCreatePeerPodWithLargeImage(t *testing.T, assert CloudAssert) {
+	namespace := envconf.RandomName("default", 7)
+	podName := "largeimagepod"
+	pod := newPod(namespace, podName, podName, "quay.io/confidential-containers/test-images:largerpod", withRestartPolicy(v1.RestartPolicyOnFailure))
+
+	newTestCase(t, "LargeImagePeerPod", assert, "Peer pod with Large Image has been created").withPod(pod).withPodWatcher().run()
 
 }
