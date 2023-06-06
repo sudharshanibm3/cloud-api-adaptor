@@ -289,7 +289,7 @@ func ComparePodLogString(ctx context.Context, t *testing.T, client klient.Client
 			}()
 		}
 	}
-	if podLogString != ExpectedPodlogString {
+	if !strings.Contains(podLogString, ExpectedPodlogString) {
 		return false, podLogString, nil
 	}
 	return true, podLogString, nil
@@ -530,5 +530,13 @@ func doTestCreatePeerPodWithWorkDirImage(t *testing.T, assert CloudAssert) {
 	pod := newPod(namespace, podName, podName, "quay.io/confidential-containers/test-images:testworkdir", withRestartPolicy(v1.RestartPolicyOnFailure))
 	expectedPodLogString := "/other"
 	newTestCase(t, "WorkDirPeerPod", assert, "Peer pod with work directory has been created").withPod(pod).withExpectedPodLogString(expectedPodLogString).run()
+
+}
+func doTestCreatePeerPodWithEnvVariableImage(t *testing.T, assert CloudAssert) {
+	namespace := envconf.RandomName("default", 7)
+	podName := "envpod"
+	pod := newPod(namespace, podName, podName, "quay.io/confidential-containers/test-images:testenv", withRestartPolicy(v1.RestartPolicyOnFailure))
+	expectedPodLogString := "ISPRODUCTION=false"
+	newTestCase(t, "EnvPeerPod", assert, "Peer pod with Environment Variables has been created").withPod(pod).withExpectedPodLogString(expectedPodLogString).run()
 
 }
