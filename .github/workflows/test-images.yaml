@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - "staging"
+      - "e2e-test-user-image"
     paths:
       - 'test/e2e/fixtures/Dockerfile.*'
 

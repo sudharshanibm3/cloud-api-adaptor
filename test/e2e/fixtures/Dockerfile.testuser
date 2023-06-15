@@ -1,4 +1,4 @@
-FROM --platform="${TARGETPLATFORM}" alpine:latest
+FROM --platform="${TARGETPLATFORM}" alpine:latest AS testuser
 RUN addgroup -S othergroup && adduser -S otheruser -G othergroup
 USER otheruser
 ENTRYPOINT [ "/bin/sh", "-c", "whoami" ]
