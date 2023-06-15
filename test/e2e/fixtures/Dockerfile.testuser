@@ -1,3 +1,4 @@
+# test
 FROM --platform="${TARGETPLATFORM}" alpine:latest
 RUN addgroup -S othergroup && adduser -S otheruser -G othergroup
 USER otheruser
