@@ -1,4 +1,4 @@
-FROM --platform="${TARGETPLATFORM}" alpine:latest AS testworkdir
+FROM --platform="${TARGETPLATFORM}" alpine:latest
 RUN mkdir -p /other
 WORKDIR /other/
 ENTRYPOINT [ "/bin/sh", "-c", "pwd" ]

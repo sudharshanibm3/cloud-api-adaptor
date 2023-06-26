@@ -1,0 +1,6 @@
+FROM ubuntu:22.04
+
+RUN groupadd -g 1000 otheruser && useradd -g otheruser -u 1000 -s /bin/bash otheruser
+USER otheruser
+
+ENTRYPOINT [ "/bin/bash", "-c", "whoami" ]
