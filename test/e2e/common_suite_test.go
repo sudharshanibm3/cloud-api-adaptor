@@ -597,7 +597,7 @@ func doTestCreatePeerPodWithJob(t *testing.T, assert CloudAssert) {
 func doTestCreatePeerPodAndCheckUserLogs(t *testing.T, assert CloudAssert) {
 	namespace := envconf.RandomName("default", 7)
 	podName := "user-pod"
-	imageName := "quay.io/confidential-containers/test-images:testuser"
+	imageName := "quay.io/sudharshanibm3/test-images:testuser"
 	pod := newPod(namespace, podName, podName, imageName, withRestartPolicy(v1.RestartPolicyOnFailure))
 	expectedPodLogString := "otheruser"
 	newTestCase(t, "UserPeerPod", assert, "Peer pod with user has been created").withPod(pod).withExpectedPodLogString(expectedPodLogString).withCustomPodState(v1.PodSucceeded).run()
