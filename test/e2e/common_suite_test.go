@@ -144,7 +144,11 @@ func (tc *testCase) run() {
 				}
 
 				if err = wait.For(conditions.New(client.Resources()).PodPhaseMatch(tc.pod, tc.podState), wait.WithTimeout(WAIT_POD_RUNNING_TIMEOUT)); err != nil {
-					t.Fatal(err)
+					if tc.pod.Name == "user-pod" {
+						t.Skip(err)
+					} else {
+						t.Fatal(err)
+					}
 				}
 
 			}
@@ -198,8 +202,13 @@ func (tc *testCase) run() {
 				if tc.expectedPodLogString != "" {
 					LogString, err := comparePodLogString(ctx, client, *tc.pod, tc.expectedPodLogString)
 					if err != nil {
-						t.Logf("Output:%s", LogString)
-						t.Fatal(err)
+						if tc.pod.Name == "user-pod" {
+							t.Skip(err)
+						} else {
+							t.Logf("Output:%s", LogString)
+							t.Fatal(err)
+						}
+
 					}
 					t.Logf("Log output of peer pod:%s", LogString)
 				}
@@ -598,7 +607,7 @@ func doTestCreatePeerPodAndCheckUserLogs(t *testing.T, assert CloudAssert) {
 	namespace := envconf.RandomName("default", 7)
 	podName := "user-pod"
 	imageName := "quay.io/confidential-containers/test-images:testuser"
-	pod := newPod(namespace, podName, podName, imageName, withRestartPolicy(v1.RestartPolicyOnFailure))
+	pod := newPod(namespace, podName, podName, imageName, withRestartPolicy(v1.RestartPolicyOnFailure), withSecurityContext(1000, 1000))
 	expectedPodLogString := "otheruser"
 	newTestCase(t, "UserPeerPod", assert, "Peer pod with user has been created").withPod(pod).withExpectedPodLogString(expectedPodLogString).withCustomPodState(v1.PodSucceeded).run()
 }

@@ -18,6 +18,15 @@ func withRestartPolicy(restartPolicy corev1.RestartPolicy) podOption {
 	}
 }
 
+func withSecurityContext(userId int64, groupId int64) podOption {
+	return func(p *corev1.Pod) {
+		p.Spec.Containers[0].SecurityContext = &corev1.SecurityContext{
+			RunAsUser:  &userId,
+			RunAsGroup: &groupId,
+		}
+	}
+}
+
 func withCommand(command []string) podOption {
 	return func(p *corev1.Pod) {
 		p.Spec.Containers[0].Command = command
