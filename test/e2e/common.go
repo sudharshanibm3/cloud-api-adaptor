@@ -82,11 +82,11 @@ func newBusyboxPod(namespace string) *corev1.Pod {
 }
 
 func newNginxPodWithConfigMap(namespace string, configMapName string) *corev1.Pod {
-	return newPod(namespace, "nginx-configmap-pod", "nginx-configmap", "nginx", withRestartPolicy(corev1.RestartPolicyNever), withConfigMapBinding("/etc/config", configMapName))
+	return newPod(namespace, "nginx-configmap-pod", "nginx-configmap", "nginx", withConfigMapBinding("/etc/config", configMapName))
 }
 
 func newNginxPodWithSecret(namespace string, secretName string) *corev1.Pod {
-	return newPod(namespace, "nginx-secret-pod", "nginx-secret", "nginx", withRestartPolicy(corev1.RestartPolicyNever), withSecretBinding("/etc/secret", secretName))
+	return newPod(namespace, "nginx-secret-pod", "nginx-secret", "nginx", withSecretBinding("/etc/secret", secretName))
 }
 
 // newConfigMap returns a new config map object.
