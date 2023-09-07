@@ -9,6 +9,13 @@ cloudimg:
       s390x:
         url: https://cloud-images.ubuntu.com/releases/focal/release-20230107/ubuntu-20.04-server-cloudimg-s390x.img
         checksum: "sha256:24673aa86785573d3a92e15166ff81beff88cbb0abc01938f156eb1332e87cd3"
+    jammy:
+      amd64:
+        url: https://cloud-images.ubuntu.com/releases/jammy/release-20230828/ubuntu-22.04-server-cloudimg-amd64.img
+        checksum: "sha256:0bda276299fc5f189718e56f65579173475eca5ffc2263d6801b897c848b28f8"
+      s390x:
+        url: https://cloud-images.ubuntu.com/releases/jammy/release-20230828/ubuntu-22.04-server-cloudimg-s390x.img
+        checksum: "sha256:0ce63cc1c90726a15495183924b1a9acad90b156b2079ad074ecf32c17ccb6de"
   centos:
     stream-8:
       amd64:
