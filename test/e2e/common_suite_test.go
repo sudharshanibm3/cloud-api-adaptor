@@ -672,7 +672,7 @@ func doTestCreatePodWithSecret(t *testing.T, assert CloudAssert) {
 
 	testCommands := []testCommand{
 		{
-			command:       []string{"cat", usernamePath},
+			command:       []string{"cat", "/sealed" + usernamePath},
 			containerName: pod.Spec.Containers[0].Name,
 			testCommandStdoutFn: func(stdout bytes.Buffer) bool {
 				if stdout.String() == username {
@@ -685,7 +685,7 @@ func doTestCreatePodWithSecret(t *testing.T, assert CloudAssert) {
 			},
 		},
 		{
-			command:       []string{"cat", passwordPath},
+			command:       []string{"cat", "/sealed" + passwordPath},
 			containerName: pod.Spec.Containers[0].Name,
 			testCommandStdoutFn: func(stdout bytes.Buffer) bool {
 				if stdout.String() == password {
