@@ -622,16 +622,16 @@ func doTestDeleteSimplePod(t *testing.T, assert CloudAssert) {
 
 func doTestCreatePodWithConfigMap(t *testing.T, assert CloudAssert) {
 	namespace := envconf.RandomName("default", 7)
-	podName := "nginx-configmap-pod"
-	containerName := "nginx-configmap-container"
-	imageName := "nginx:latest"
-	configMapName := "nginx-configmap"
+	podName := "busybox-configmap-pod"
+	containerName := "busybox-configmap-container"
+	imageName := "busybox:latest"
+	configMapName := "busybox-configmap"
 	configMapFileName := "example.txt"
 	podKubeConfigmapDir := "/etc/config/"
 	configMapPath := podKubeConfigmapDir + configMapFileName
 	configMapContents := "Hello, world"
 	configMapData := map[string]string{configMapFileName: configMapContents}
-	pod := newPod(namespace, podName, containerName, imageName, withConfigMapBinding(podKubeConfigmapDir, configMapName))
+	pod := newPod(namespace, podName, containerName, imageName, withConfigMapBinding(podKubeConfigmapDir, configMapName), withCommand([]string{"/bin/sh", "-c", "sleep 3600"}))
 	configMap := newConfigMap(namespace, configMapName, configMapData)
 	testCommands := []testCommand{
 		{
@@ -655,10 +655,10 @@ func doTestCreatePodWithConfigMap(t *testing.T, assert CloudAssert) {
 func doTestCreatePodWithSecret(t *testing.T, assert CloudAssert) {
 	//doTestCreatePod(t, assert, "Secret is created and contains data", pod)
 	namespace := envconf.RandomName("default", 7)
-	podName := "nginx-secret-pod"
-	containerName := "nginx-secret-container"
-	imageName := "nginx:latest"
-	secretName := "nginx-secret"
+	podName := "busybox-secret-pod"
+	containerName := "busybox-secret-container"
+	imageName := "busybox:latest"
+	secretName := "busybox-secret"
 	podKubeSecretsDir := "/etc/secret/"
 	usernameFileName := "username"
 	username := "admin"
@@ -667,7 +667,7 @@ func doTestCreatePodWithSecret(t *testing.T, assert CloudAssert) {
 	password := "password"
 	passwordPath := podKubeSecretsDir + passwordFileName
 	secretData := map[string][]byte{passwordFileName: []byte(password), usernameFileName: []byte(username)}
-	pod := newPod(namespace, podName, containerName, imageName, withSecretBinding(podKubeSecretsDir, secretName))
+	pod := newPod(namespace, podName, containerName, imageName, withSecretBinding(podKubeSecretsDir, secretName), withCommand([]string{"/bin/sh", "-c", "sleep 3600"}))
 	secret := newSecret(namespace, secretName, secretData, v1.SecretTypeOpaque)
 
 	testCommands := []testCommand{
@@ -746,7 +746,9 @@ func doTestCreatePeerPodAndCheckUserLogs(t *testing.T, assert CloudAssert) {
 // doTestCreateConfidentialPod verify a confidential peer-pod can be created.
 func doTestCreateConfidentialPod(t *testing.T, assert CloudAssert, testCommands []testCommand) {
 	namespace := envconf.RandomName("default", 7)
-	pod := newNginxPodWithName(namespace, "confidential-pod-nginx")
+	podName := "confidential-pod-nginx"
+	imageName := "busybox:latest"
+	pod := newPod(namespace, podName, podName, imageName, withCommand([]string{"/bin/sh", "-c", "sleep 3600"}))
 	for i := 0; i < len(testCommands); i++ {
 		testCommands[i].containerName = pod.Spec.Containers[0].Name
 	}
@@ -775,7 +777,7 @@ func doTestCreatePeerPodAndCheckEnvVariableLogsWithImageOnly(t *testing.T, asser
 func doTestCreatePeerPodAndCheckEnvVariableLogsWithDeploymentOnly(t *testing.T, assert CloudAssert) {
 	namespace := envconf.RandomName("default", 7)
 	podName := "env-variable-in-config"
-	imageName := "nginx:latest"
+	imageName := "busybox:latest"
 	pod := newPod(namespace, podName, podName, imageName, withRestartPolicy(v1.RestartPolicyOnFailure), withEnvironmentalVariables([]v1.EnvVar{{Name: "ISPRODUCTION", Value: "true"}}), withCommand([]string{"/bin/sh", "-c", "env"}))
 	expectedPodLogString := "ISPRODUCTION=true"
 	newTestCase(t, "EnvVariablePeerPodWithDeploymentOnly", assert, "Peer pod with environmental variables has been created").withPod(pod).withExpectedPodLogString(expectedPodLogString).withCustomPodState(v1.PodSucceeded).run()

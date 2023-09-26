@@ -11,10 +11,11 @@ import (
 	"strings"
 	"testing"
 
+	corev1 "k8s.io/api/core/v1"
+
 	"github.com/IBM/vpc-go-sdk/vpcv1"
 	pv "github.com/confidential-containers/cloud-api-adaptor/test/provisioner"
 	log "github.com/sirupsen/logrus"
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/pointer"
 )
@@ -159,7 +160,7 @@ func TestCreatePeerPodWithPVC(t *testing.T) {
 		storageClassName := "ibmc-vpc-block-5iops-tier"
 		storageSize := "10Gi"
 		podName := "nginx-pvc-pod"
-		imageName := "nginx:latest"
+		imageName := "busybox:latest"
 		containerName := "nginx-pvc-container"
 		csiContainerName := "ibm-vpc-block-podvm-node-driver"
 		csiImageName := "gcr.io/k8s-staging-cloud-provider-ibm/ibm-vpc-block-csi-driver:v5.2.0"
