@@ -8,6 +8,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
 type podOption func(*corev1.Pod)
@@ -15,6 +16,22 @@ type podOption func(*corev1.Pod)
 func withRestartPolicy(restartPolicy corev1.RestartPolicy) podOption {
 	return func(p *corev1.Pod) {
 		p.Spec.RestartPolicy = restartPolicy
+	}
+}
+
+func withContainerPort(port int32) podOption {
+	return func(p *corev1.Pod) {
+		p.Spec.Containers[0].Ports = []corev1.ContainerPort{{ContainerPort: port}}
+		p.Spec.Containers[0].ReadinessProbe = &corev1.Probe{
+			ProbeHandler: corev1.ProbeHandler{
+				HTTPGet: &corev1.HTTPGetAction{
+					Path: "/",
+					Port: intstr.FromInt(int(port)),
+				},
+			},
+			InitialDelaySeconds: 10,
+			PeriodSeconds:       5,
+		}
 	}
 }
 
@@ -67,7 +84,23 @@ func newPod(namespace string, podName string, containerName string, imageName st
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{Name: podName, Namespace: namespace},
 		Spec: corev1.PodSpec{
-			Containers:       []corev1.Container{{Name: containerName, Image: imageName, ImagePullPolicy: corev1.PullAlways}},
+			Containers: []corev1.Container{
+				{
+					Name:            containerName,
+					Image:           imageName,
+					ImagePullPolicy: corev1.PullAlways,
+					ReadinessProbe: &corev1.Probe{
+						ProbeHandler: corev1.ProbeHandler{
+							HTTPGet: &corev1.HTTPGetAction{
+								Path: "/",
+								Port: intstr.FromInt(80),
+							},
+						},
+						InitialDelaySeconds: 10,
+						PeriodSeconds:       5,
+					},
+				},
+			},
 			RuntimeClassName: &runtimeClassName,
 		},
 	}
