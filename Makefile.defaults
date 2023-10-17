@@ -16,7 +16,7 @@ $(or $(shell $(YQ_COMMAND) '.$(1) | select(. != null)' $(VERSIONS_SRC)), \
 	$(error $(1) is not set, and could not be automatically set from $(VERSIONS_SRC)))
 endef
 
-ubuntu_RELEASE ?= focal
+ubuntu_RELEASE ?= jammy
 centos_RELEASE ?= stream-9
 rhel_RELEASE ?= 9
 
